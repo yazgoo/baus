@@ -1,0 +1,5 @@
+usage:
+
+```
+echo -e "hamster\ncat\nhorse" | cargo run -- --name animals --action sort | fzf --no-sort | cargo run -- --name animals --action save
+```
