@@ -113,29 +113,27 @@ fn sort(
     lines: Vec<String>,
     lines_backup: &mut HashMap<String, i64>,
     cache_file_path: &Path,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Vec<String>, Box<dyn Error>> {
     let mut lines = get_asc_sorted_lines(lines, &lines_backup)?;
     if args.desc {
         lines = lines.into_iter().rev().collect();
     }
-    for line in &lines {
-        println!("{}", line);
-    }
     if args.cleanup {
         cleanup(lines_backup, cache_file_path, &lines)?;
     }
-    Ok(())
+    Ok(lines)
 }
 
 fn update_first_stdin_line(
-    args: &Args,
+    saved_value: &SavedValue,
     lines: &Vec<String>,
-    mut lines_backup: HashMap<String, i64>,
-) -> Result<HashMap<String, i64>, Box<dyn Error>> {
+    lines_backup: &mut HashMap<String, i64>,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut output_lines = Vec::new();
     lines.get(0).map(|l| {
         let mut line = l.clone();
         trim_newline(&mut line);
-        let value = match &args.value {
+        let value = match &saved_value {
             SavedValue::Count => get_value(&lines_backup, &line) + 1,
             SavedValue::Timestamp => SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -143,9 +141,9 @@ fn update_first_stdin_line(
                 .as_secs() as i64,
         };
         lines_backup.insert(line.to_string(), value);
-        println!("{}", line);
+        output_lines.push(line)
     });
-    Ok(lines_backup)
+    Ok(output_lines)
 }
 
 fn get_cache_file_path(args: &Args) -> Result<PathBuf, Box<dyn Error>> {
@@ -166,13 +164,12 @@ fn get_lines_backup(cache_file_path: &Path) -> Result<HashMap<String, i64>, Box<
 fn save(
     args: &Args,
     lines: Vec<String>,
-    lines_backup: HashMap<String, i64>,
+    mut lines_backup: HashMap<String, i64>,
     cache_file_path: &Path,
-) -> Result<(), Box<dyn Error>> {
-    backup_lines(
-        &cache_file_path,
-        &update_first_stdin_line(&args, &lines, lines_backup)?,
-    )
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let output_lines = update_first_stdin_line(&args.value, &lines, &mut lines_backup)?;
+    backup_lines(&cache_file_path, &lines_backup)?;
+    Ok(output_lines)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -180,9 +177,40 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cache_file_path = get_cache_file_path(&args)?;
     let mut lines_backup = get_lines_backup(&cache_file_path)?;
     let lines = get_stdin_lines()?;
-    match &args.action {
+    let output_lines = match &args.action {
         Action::Sort => sort(&args, lines, &mut lines_backup, &cache_file_path)?,
         Action::Save => save(&args, lines, lines_backup, &cache_file_path)?,
     };
+    for line in &output_lines {
+        println!("{}", line);
+    }
     Ok(())
+}
+
+#[test]
+fn test_get_asc_sorted_lines() {
+    assert_eq!(
+        get_asc_sorted_lines(
+            Vec::from(["horse".to_string(), "hamster".to_string()]),
+            &HashMap::from([("horse".to_string(), 2), ("hamster".to_string(), 1)]),
+        )
+        .unwrap(),
+        Vec::from(["hamster", "horse"])
+    )
+}
+
+#[test]
+fn test_update_first_stdin_line() {
+    let mut cache = HashMap::from([("horse".to_string(), 2), ("hamster".to_string(), 1)]);
+    assert_eq!(
+        update_first_stdin_line(
+            &SavedValue::Count,
+            &Vec::from(["horse".to_string(), "hamster".to_string()]),
+            &mut cache,
+        )
+        .unwrap(),
+        Vec::from(["horse"])
+    );
+    assert_eq!(cache.get("horse"), Some(&3));
+    assert_eq!(cache.get("hamster"), Some(&1))
 }
