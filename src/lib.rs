@@ -60,7 +60,7 @@ fn load_lines(cache_file_path: &Path) -> Result<HashMap<String, i64>, Box<dyn Er
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let content_str = &contents.as_str();
-    json::from_str(&content_str).map_err(|x| x.into())
+    json::from_str(content_str).map_err(|x| x.into())
 }
 
 fn get_value(lines_backup: &HashMap<String, i64>, key: &String) -> i64 {
@@ -81,13 +81,13 @@ fn cleanup(
     cache_file_path: &Path,
     lines: &Vec<String>,
 ) -> Result<(), Box<dyn Error>> {
-    lines_backup.retain(|k, _| lines.contains(&k));
+    lines_backup.retain(|k, _| lines.contains(k));
     for line in lines {
         if !lines_backup.contains_key(line) {
             lines_backup.insert(line.clone(), 0);
         }
     }
-    backup_lines(&cache_file_path, &lines_backup)?;
+    backup_lines(cache_file_path, lines_backup)?;
     Ok(())
 }
 
@@ -101,8 +101,8 @@ pub fn get_asc_sorted_lines(
     lines_backup: &HashMap<String, i64>,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     lines.sort_by(|a, b| {
-        get_value(&lines_backup, a)
-            .partial_cmp(&get_value(&lines_backup, b))
+        get_value(lines_backup, a)
+            .partial_cmp(&get_value(lines_backup, b))
             .unwrap()
     });
     Ok(lines)
@@ -114,7 +114,7 @@ pub fn sort(
     lines_backup: &mut HashMap<String, i64>,
     cache_file_path: &Path,
 ) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut lines = get_asc_sorted_lines(lines, &lines_backup)?;
+    let mut lines = get_asc_sorted_lines(lines, lines_backup)?;
     if args.desc {
         lines = lines.into_iter().rev().collect();
     }
@@ -126,15 +126,15 @@ pub fn sort(
 
 fn update_first_stdin_line(
     saved_value: &SavedValue,
-    lines: &Vec<String>,
+    lines: &[String],
     lines_backup: &mut HashMap<String, i64>,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let mut output_lines = Vec::new();
-    lines.get(0).map(|l| {
+    if let Some(l) = lines.get(0) {
         let mut line = l.clone();
         trim_newline(&mut line);
         let value = match &saved_value {
-            SavedValue::Count => get_value(&lines_backup, &line) + 1,
+            SavedValue::Count => get_value(lines_backup, &line) + 1,
             SavedValue::Timestamp => SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
@@ -142,7 +142,7 @@ fn update_first_stdin_line(
         };
         lines_backup.insert(line.to_string(), value);
         output_lines.push(line)
-    });
+    }
     Ok(output_lines)
 }
 
@@ -156,9 +156,9 @@ pub fn get_cache_file_path(args: &Args) -> Result<PathBuf, Box<dyn Error>> {
 pub fn get_lines_backup(cache_file_path: &Path) -> Result<HashMap<String, i64>, Box<dyn Error>> {
     let lines_backup = HashMap::<String, i64>::new();
     if !cache_file_path.exists() {
-        backup_lines(&cache_file_path, &lines_backup)?;
+        backup_lines(cache_file_path, &lines_backup)?;
     }
-    Ok(load_lines(&cache_file_path)?)
+    load_lines(cache_file_path)
 }
 
 pub fn save(
@@ -168,7 +168,7 @@ pub fn save(
     cache_file_path: &Path,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let output_lines = update_first_stdin_line(&args.value, &lines, &mut lines_backup)?;
-    backup_lines(&cache_file_path, &lines_backup)?;
+    backup_lines(cache_file_path, &lines_backup)?;
     Ok(output_lines)
 }
 
